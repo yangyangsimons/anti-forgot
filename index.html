@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>艾宾浩斯记忆曲线复习表-滕滕</title>
+    <title>艾宾浩斯记忆曲线复习表</title>
     <style>
         * {
             box-sizing: border-box;
@@ -164,6 +164,17 @@
             box-shadow: 0 0 0 3px rgba(76, 175, 80, 0.1);
         }
         
+        .datetime-group {
+            display: flex;
+            gap: 10px;
+            flex: 1;
+            min-width: 300px;
+        }
+        
+        .datetime-group input {
+            margin: 0;
+        }
+        
         .btn {
             background: #4CAF50;
             color: white;
@@ -281,8 +292,12 @@
                 flex-direction: column;
             }
             
-            .input-group input {
+            .input-group input, .datetime-group {
                 min-width: auto;
+            }
+            
+            .datetime-group {
+                flex-direction: column;
             }
             
             .header h1 {
@@ -324,7 +339,7 @@
                 <h3>二、如何添加学习内容</h3>
                 <ol>
                     <li>在"输入学习内容"框中填写你要学习的内容（如：英语单词第1组、历史第三章等）</li>
-                    <li>选择开始学习的日期</li>
+                    <li>选择开始学习的日期和时间（默认为当前时间）</li>
                     <li>点击"添加到复习计划"按钮</li>
                     <li>系统会自动计算出8个复习时间点</li>
                 </ol>
@@ -381,7 +396,10 @@
                 <h3 style="margin-bottom: 20px; color: #333;">添加新的学习内容</h3>
                 <div class="input-group">
                     <input type="text" id="contentInput" placeholder="输入学习内容（如：单词组1、历史第三章等）">
-                    <input type="date" id="startDateInput">
+                    <div class="datetime-group">
+                        <input type="date" id="startDateInput">
+                        <input type="time" id="startTimeInput">
+                    </div>
                     <button class="btn" onclick="addContent()">添加到复习计划</button>
                 </div>
             </div>
@@ -459,13 +477,15 @@
         function addContent() {
             const content = document.getElementById('contentInput').value.trim();
             const startDate = document.getElementById('startDateInput').value;
+            const startTime = document.getElementById('startTimeInput').value;
             
-            if (!content || !startDate) {
-                alert('请填写学习内容和开始日期！');
+            if (!content || !startDate || !startTime) {
+                alert('请填写学习内容、日期和时间！');
                 return;
             }
             
-            const startDateTime = new Date(startDate);
+            // 组合日期和时间创建完整的开始时间
+            const startDateTime = new Date(`${startDate}T${startTime}`);
             const reviewDates = intervals.map(interval => addMinutes(startDateTime, interval));
             
             const newItem = {
@@ -482,7 +502,8 @@
             
             // 清空输入框
             document.getElementById('contentInput').value = '';
-            document.getElementById('startDateInput').value = '';
+            // 重新设置为当前时间
+            setCurrentDateTime();
         }
         
         function toggleStatus(itemId, reviewIndex) {
@@ -570,8 +591,22 @@
             localStorage.setItem('reviewData', JSON.stringify(reviewData));
         }
         
-        // 初始化
-        document.getElementById('startDateInput').value = new Date().toISOString().split('T')[0];
+        function setCurrentDateTime() {
+            const now = new Date();
+            
+            // 设置当前日期
+            const dateStr = now.toISOString().split('T')[0];
+            document.getElementById('startDateInput').value = dateStr;
+            
+            // 设置当前时间（格式化为HH:MM）
+            const hours = String(now.getHours()).padStart(2, '0');
+            const minutes = String(now.getMinutes()).padStart(2, '0');
+            const timeStr = `${hours}:${minutes}`;
+            document.getElementById('startTimeInput').value = timeStr;
+        }
+        
+        // 初始化 - 设置当前日期和时间
+        setCurrentDateTime();
         renderTable();
         
         // 每分钟检查一次是否有到期的复习
