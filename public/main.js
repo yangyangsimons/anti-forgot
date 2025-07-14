@@ -1,11 +1,330 @@
+// 全局状态
+let currentUser = null
 let reviewData = []
 let isOnline = false
+let isGuestMode = true // 默认游客模式
 
 // 艾宾浩斯复习间隔（分钟）
-const intervals = [20, 60, 1440, 2880, 5760, 10080, 21600, 43200] // 20分钟，1小时，1天，2天，4天，7天，15天，30天
+const intervals = [20, 60, 1440, 2880, 5760, 10080, 21600, 43200]
+const intervalNames = [
+  '20分钟后',
+  '1小时后',
+  '1天后',
+  '2天后',
+  '4天后',
+  '7天后',
+  '15天后',
+  '30天后',
+]
 
 // API 配置
 const API_BASE = '/api'
+
+// ==================== 认证相关函数 ====================
+
+function showAuthModal() {
+  const modal = document.getElementById('authModal')
+  modal.classList.add('show')
+  document.body.style.overflow = 'hidden'
+}
+
+function hideAuthModal() {
+  const modal = document.getElementById('authModal')
+  modal.classList.remove('show')
+  document.body.style.overflow = ''
+}
+
+// 点击空白区域关闭弹窗
+function handleModalBackdropClick(event) {
+  const modal = document.getElementById('authModal')
+  if (event.target === modal) {
+    hideAuthModal()
+  }
+}
+
+// ESC 键关闭弹窗
+function handleEscapeKey(event) {
+  if (event.key === 'Escape') {
+    const modal = document.getElementById('authModal')
+    if (modal.classList.contains('show')) {
+      hideAuthModal()
+    }
+  }
+}
+
+function switchAuthTab(tab) {
+  // 更新标签状态
+  document
+    .querySelectorAll('.auth-tab')
+    .forEach((t) => t.classList.remove('active'))
+  document
+    .querySelector(`[onclick="switchAuthTab('${tab}')"]`)
+    .classList.add('active')
+
+  // 更新表单显示
+  document
+    .querySelectorAll('.auth-form-container')
+    .forEach((f) => f.classList.remove('active'))
+  document.getElementById(tab + 'FormModal').classList.add('active')
+
+  // 清除消息
+  hideAuthMessages()
+}
+
+function showAuthError(message) {
+  const errorDiv = document.getElementById('authErrorMessage')
+  errorDiv.textContent = message
+  errorDiv.style.display = 'block'
+  document.getElementById('authSuccessMessage').style.display = 'none'
+}
+
+function showAuthSuccess(message) {
+  const successDiv = document.getElementById('authSuccessMessage')
+  successDiv.textContent = message
+  successDiv.style.display = 'block'
+  document.getElementById('authErrorMessage').style.display = 'none'
+}
+
+function hideAuthMessages() {
+  document.getElementById('authErrorMessage').style.display = 'none'
+  document.getElementById('authSuccessMessage').style.display = 'none'
+}
+
+function showAuthLoading() {
+  document.getElementById('authLoading').classList.add('show')
+  document.querySelectorAll('.auth-btn').forEach((btn) => (btn.disabled = true))
+}
+
+function hideAuthLoading() {
+  document.getElementById('authLoading').classList.remove('show')
+  document
+    .querySelectorAll('.auth-btn')
+    .forEach((btn) => (btn.disabled = false))
+}
+
+async function handleModalLogin(event) {
+  event.preventDefault()
+
+  const username = document.getElementById('modalLoginUsername').value
+  const password = document.getElementById('modalLoginPassword').value
+
+  hideAuthMessages()
+  showAuthLoading()
+
+  try {
+    const response = await fetch('/api/auth/login', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, password }),
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      // 保存token和用户信息
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      currentUser = data.user
+      isGuestMode = false
+
+      showAuthSuccess('登录成功！')
+
+      // 1.5秒后关闭弹窗并切换到用户模式
+      setTimeout(() => {
+        hideAuthModal()
+        switchToUserMode()
+        loadFromServer()
+        clearAuthForms()
+      }, 1500)
+    } else {
+      showAuthError(data.error || '登录失败')
+    }
+  } catch (error) {
+    showAuthError('网络错误，请稍后重试')
+    console.error('登录错误:', error)
+  } finally {
+    hideAuthLoading()
+  }
+}
+
+async function handleModalRegister(event) {
+  event.preventDefault()
+
+  const username = document.getElementById('modalRegisterUsername').value
+  const email = document.getElementById('modalRegisterEmail').value
+  const password = document.getElementById('modalRegisterPassword').value
+
+  hideAuthMessages()
+  showAuthLoading()
+
+  try {
+    const response = await fetch('/api/auth/register', {
+      method: 'POST',
+      headers: {
+        'Content-Type': 'application/json',
+      },
+      body: JSON.stringify({ username, email, password }),
+    })
+
+    const data = await response.json()
+
+    if (data.success) {
+      // 保存token和用户信息
+      localStorage.setItem('token', data.token)
+      localStorage.setItem('user', JSON.stringify(data.user))
+      currentUser = data.user
+      isGuestMode = false
+
+      showAuthSuccess('注册成功！')
+
+      // 1.5秒后关闭弹窗并切换到用户模式
+      setTimeout(() => {
+        hideAuthModal()
+        switchToUserMode()
+
+        // 如果有本地数据，询问是否同步到云端
+        const localData = JSON.parse(localStorage.getItem('reviewData') || '[]')
+        if (localData.length > 0) {
+          if (
+            confirm(
+              `检测到您有 ${localData.length} 个本地学习项目，是否同步到云端？`
+            )
+          ) {
+            syncLocalDataToServer(localData)
+          }
+        }
+
+        clearAuthForms()
+      }, 1500)
+    } else {
+      showAuthError(data.error || '注册失败')
+    }
+  } catch (error) {
+    showAuthError('网络错误，请稍后重试')
+    console.error('注册错误:', error)
+  } finally {
+    hideAuthLoading()
+  }
+}
+
+function clearAuthForms() {
+  // 清空表单
+  document.getElementById('modalLoginUsername').value = ''
+  document.getElementById('modalLoginPassword').value = ''
+  document.getElementById('modalRegisterUsername').value = ''
+  document.getElementById('modalRegisterEmail').value = ''
+  document.getElementById('modalRegisterPassword').value = ''
+
+  // 重置到登录标签
+  switchAuthTab('login')
+  hideAuthMessages()
+}
+
+function logout() {
+  if (confirm('确定要退出登录吗？您的数据将保存在云端。')) {
+    localStorage.removeItem('token')
+    localStorage.removeItem('user')
+    currentUser = null
+    isGuestMode = true
+
+    // 切换到游客模式
+    switchToGuestMode()
+
+    // 清空当前数据，加载本地数据
+    reviewData = JSON.parse(localStorage.getItem('reviewData') || '[]')
+    renderTable()
+    updateSyncStatus('🏠 游客模式 - 数据仅保存在本地', false)
+  }
+}
+
+function switchToUserMode() {
+  // 显示用户栏，隐藏游客栏
+  document.getElementById('userBar').style.display = 'flex'
+  document.getElementById('guestBar').style.display = 'none'
+
+  // 更新用户信息
+  if (currentUser) {
+    document.getElementById(
+      'userWelcome'
+    ).textContent = `👋 ${currentUser.username}`
+    loadUserStats()
+  }
+
+  updateSyncStatus('☁️ 已连接云端存储', true)
+}
+
+function switchToGuestMode() {
+  // 显示游客栏，隐藏用户栏
+  document.getElementById('userBar').style.display = 'none'
+  document.getElementById('guestBar').style.display = 'flex'
+
+  updateSyncStatus('🏠 游客模式 - 数据仅保存在本地', false)
+}
+
+function checkAuth() {
+  const token = localStorage.getItem('token')
+  const user = localStorage.getItem('user')
+
+  if (token && user) {
+    try {
+      currentUser = JSON.parse(user)
+      isGuestMode = false
+      return true
+    } catch (error) {
+      console.error('用户信息解析失败:', error)
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+    }
+  }
+  return false
+}
+
+function getAuthHeaders() {
+  const token = localStorage.getItem('token')
+  return {
+    Authorization: `Bearer ${token}`,
+    'Content-Type': 'application/json',
+  }
+}
+
+async function loadUserStats() {
+  try {
+    const response = await apiRequest('/user/stats')
+    if (response.success) {
+      const stats = response.stats
+      document.getElementById(
+        'userStats'
+      ).textContent = `📚 ${stats.totalItems}个学习项目 | ✅ 完成率 ${stats.completionRate}%`
+    }
+  } catch (error) {
+    console.error('加载统计信息失败:', error)
+  }
+}
+
+// 同步本地数据到服务器
+async function syncLocalDataToServer(localData) {
+  try {
+    const response = await apiRequest('/reviews', {
+      method: 'POST',
+      body: JSON.stringify({ reviews: localData }),
+    })
+
+    if (response.success) {
+      // 清除本地数据
+      localStorage.removeItem('reviewData')
+      reviewData = localData
+      renderTable()
+      updateSyncStatus('✅ 本地数据已同步到云端', true)
+    }
+  } catch (error) {
+    console.error('同步本地数据失败:', error)
+    updateSyncStatus('❌ 同步失败，请稍后重试', false)
+  }
+}
+
+// ==================== 核心功能函数 ====================
 
 // 显示同步状态
 function updateSyncStatus(message, isSuccess = true) {
@@ -19,14 +338,29 @@ function updateSyncStatus(message, isSuccess = true) {
 
 // API 请求封装
 async function apiRequest(endpoint, options = {}) {
+  if (isGuestMode) {
+    throw new Error('游客模式下无法访问API')
+  }
+
   try {
     const response = await fetch(`${API_BASE}${endpoint}`, {
       headers: {
-        'Content-Type': 'application/json',
+        ...getAuthHeaders(),
         ...options.headers,
       },
       ...options,
     })
+
+    if (response.status === 401 || response.status === 403) {
+      // token失效，切换到游客模式
+      localStorage.removeItem('token')
+      localStorage.removeItem('user')
+      currentUser = null
+      isGuestMode = true
+      switchToGuestMode()
+      loadLocalData()
+      return
+    }
 
     if (!response.ok) {
       throw new Error(`HTTP ${response.status}: ${response.statusText}`)
@@ -39,364 +373,574 @@ async function apiRequest(endpoint, options = {}) {
   }
 }
 
-// 从服务器加载数据
-async function loadFromServer() {
-  try {
-    updateSyncStatus('🔄 正在从服务器加载数据...', true)
-
-    const response = await apiRequest('/reviews')
-
-    if (response.success) {
-      // 转换数据格式（确保日期对象正确）
-      reviewData = response.data.map((item) => ({
-        ...item,
-        startDate: new Date(item.startDate),
-        reviewDates: item.reviewDates.map((dateStr) => new Date(dateStr)),
-      }))
-
-      isOnline = true
-      updateSyncStatus(
-        `✅ 服务器连接成功，加载了 ${reviewData.length} 条记录`,
-        true
-      )
-
-      // 同时保存到本地作为备份
-      saveToLocal()
-    } else {
-      throw new Error(response.error || '服务器返回错误')
-    }
-  } catch (error) {
-    console.error('从服务器加载数据失败:', error)
-    isOnline = false
-    updateSyncStatus('⚠️ 服务器连接失败，使用本地数据', false)
-
-    // 使用本地备份数据
-    loadFromLocal()
-  }
-
-  renderTable()
-}
-
-// 保存数据到服务器
-async function saveToServer() {
-  if (!isOnline) {
-    saveToLocal()
-    return
-  }
-
-  try {
-    // 准备要发送的数据
-    const dataToSend = reviewData.map((item) => ({
-      ...item,
-      startDate: item.startDate.toISOString(),
-      reviewDates: item.reviewDates.map((date) => date.toISOString()),
-    }))
-
-    const response = await apiRequest('/reviews', {
-      method: 'POST',
-      body: JSON.stringify({ reviews: dataToSend }),
-    })
-
-    if (response.success) {
-      updateSyncStatus(`✅ 数据已同步到服务器 (${response.count} 条记录)`, true)
-      saveToLocal() // 同时保存到本地
-    } else {
-      throw new Error(response.error || '保存失败')
-    }
-  } catch (error) {
-    console.error('保存到服务器失败:', error)
-    isOnline = false
-    updateSyncStatus('⚠️ 服务器保存失败，数据已保存到本地', false)
-    saveToLocal()
-  }
-}
-
-// 本地存储操作
-function saveToLocal() {
-  try {
-    localStorage.setItem('reviewData', JSON.stringify(reviewData))
-  } catch (error) {
-    console.error('本地保存失败:', error)
-  }
-}
-
-function loadFromLocal() {
-  try {
-    const localData = localStorage.getItem('reviewData')
-    if (localData) {
-      const parsed = JSON.parse(localData)
-      reviewData = parsed.map((item) => ({
-        ...item,
-        startDate: new Date(item.startDate),
-        reviewDates: item.reviewDates.map((dateStr) => new Date(dateStr)),
-      }))
-    } else {
-      reviewData = []
-    }
-  } catch (error) {
-    console.error('本地数据加载失败:', error)
-    reviewData = []
-  }
-}
-
+// 切换使用说明
 function toggleInstructions() {
-  const instructions = document.getElementById('instructions')
-  const toggleBtn = instructions.querySelector('.toggle-btn')
-
-  if (instructions.classList.contains('collapsed')) {
-    instructions.classList.remove('collapsed')
-    toggleBtn.textContent = '收起说明'
-  } else {
-    instructions.classList.add('collapsed')
-    toggleBtn.textContent = '展开说明'
-  }
+  const panel = document.getElementById('instructionsPanel')
+  panel.classList.toggle('show')
 }
 
+// 格式化日期显示
 function formatDate(date) {
-  return date.toLocaleDateString('zh-CN')
-}
-
-function formatTime(date) {
-  return date.toLocaleTimeString('zh-CN', {
+  return date.toLocaleString('zh-CN', {
+    year: 'numeric',
+    month: '2-digit',
+    day: '2-digit',
     hour: '2-digit',
     minute: '2-digit',
   })
 }
 
-function addMinutes(date, minutes) {
-  return new Date(date.getTime() + minutes * 60000)
+// 格式化相对时间
+function formatRelativeTime(date) {
+  const now = new Date()
+  const diffMs = date.getTime() - now.getTime()
+  const diffMins = Math.round(diffMs / (1000 * 60))
+  const diffHours = Math.round(diffMs / (1000 * 60 * 60))
+  const diffDays = Math.round(diffMs / (1000 * 60 * 60 * 24))
+
+  if (Math.abs(diffMins) < 60) {
+    return diffMins > 0 ? `${diffMins}分钟后` : `${Math.abs(diffMins)}分钟前`
+  } else if (Math.abs(diffHours) < 24) {
+    return diffHours > 0 ? `${diffHours}小时后` : `${Math.abs(diffHours)}小时前`
+  } else {
+    return diffDays > 0 ? `${diffDays}天后` : `${Math.abs(diffDays)}天前`
+  }
 }
 
-async function addContent() {
-  const content = document.getElementById('contentInput').value.trim()
-  const startDate = document.getElementById('startDateInput').value
-  const startTime = document.getElementById('startTimeInput').value
+// 添加学习内容
+function addContent(event) {
+  if (event) {
+    event.preventDefault()
+  }
 
-  if (!content || !startDate || !startTime) {
-    alert('请填写学习内容、日期和时间！')
+  // 如果是游客模式，提示登录以获得更好体验
+  if (isGuestMode) {
+    if (
+      confirm(
+        '您当前是游客模式，数据仅保存在本地，刷新页面会丢失。\n\n注册登录后可以云端同步，多设备访问。\n\n是否现在登录注册？'
+      )
+    ) {
+      showAuthModal()
+      return
+    }
+  }
+
+  const contentInput = document.getElementById('content')
+  const content = contentInput.value.trim()
+
+  if (!content) {
+    alert('请输入学习内容')
     return
   }
 
-  // 组合日期和时间创建完整的开始时间
-  const startDateTime = new Date(`${startDate}T${startTime}`)
-  const reviewDates = intervals.map((interval) =>
-    addMinutes(startDateTime, interval)
-  )
+  const now = new Date()
+  const reviewTimes = intervals.map((interval) => {
+    const reviewTime = new Date(now.getTime() + interval * 60 * 1000)
+    return reviewTime.toISOString()
+  })
 
   const newItem = {
     id: Date.now(),
     content: content,
-    startDate: startDateTime,
-    reviewDates: reviewDates,
-    status: new Array(8).fill(0), // 0: 未开始, 1: 进行中, 2: 已完成
+    addTime: now.toISOString(),
+    reviewDates: reviewTimes,
+    status: new Array(8).fill(0), // 0: 待复习, 1: 跳过, 2: 已完成
   }
 
-  reviewData.push(newItem)
-  await saveData()
+  reviewData.unshift(newItem)
+  contentInput.value = ''
+
+  // 保存数据
+  if (isGuestMode) {
+    saveToLocal()
+    updateSyncStatus('📝 已保存到本地', true)
+  } else {
+    saveToServer()
+  }
+
   renderTable()
-
-  // 清空输入框
-  document.getElementById('contentInput').value = ''
-  // 重新设置为当前时间
-  setCurrentDateTime()
-
-  updateSyncStatus(`✅ 已添加"${content}"`, true)
+  console.log('添加学习内容:', content)
 }
 
-async function toggleStatus(itemId, reviewIndex) {
-  const item = reviewData.find((item) => item.id === itemId)
+// 标记复习状态
+function markReview(id, reviewIndex, status) {
+  const item = reviewData.find((item) => item.id === id)
   if (item) {
-    item.status[reviewIndex] = (item.status[reviewIndex] + 1) % 3
-    await saveData()
+    item.status[reviewIndex] = status
+
+    // 保存数据
+    if (isGuestMode) {
+      saveToLocal()
+    } else {
+      saveToServer()
+    }
+
     renderTable()
+
+    const statusText = status === 2 ? '已完成' : '已跳过'
+    console.log(
+      `标记复习状态: ${item.content} - 第${
+        reviewIndex + 1
+      }次复习 - ${statusText}`
+    )
   }
 }
 
-async function deleteItem(itemId) {
-  const item = reviewData.find((item) => item.id === itemId)
-  if (item && confirm(`确定要删除"${item.content}"吗？`)) {
-    reviewData = reviewData.filter((item) => item.id !== itemId)
-    await saveData()
+// 删除学习项目
+function deleteItem(id) {
+  if (confirm('确定要删除这个学习项目吗？')) {
+    reviewData = reviewData.filter((item) => item.id !== id)
+
+    // 保存数据
+    if (isGuestMode) {
+      saveToLocal()
+    } else {
+      saveToServer()
+    }
+
     renderTable()
-    updateSyncStatus('✅ 项目已删除', true)
+    console.log('删除学习项目:', id)
   }
 }
 
-function getStatusClass(status) {
-  switch (status) {
-    case 0:
-      return 'status-not-started'
-    case 1:
-      return 'status-in-progress'
-    case 2:
-      return 'status-completed'
-    default:
-      return 'status-not-started'
-  }
-}
+// 清理已完成的项目
+function clearCompleted() {
+  const completedItems = reviewData.filter((item) =>
+    item.status.every((status) => status === 2)
+  )
 
-function getStatusText(status) {
-  switch (status) {
-    case 0:
-      return '未开始'
-    case 1:
-      return '进行中'
-    case 2:
-      return '已完成'
-    default:
-      return '未开始'
-  }
-}
-
-function renderTable() {
-  const tbody = document.getElementById('tableBody')
-  tbody.innerHTML = ''
-
-  if (reviewData.length === 0) {
-    tbody.innerHTML = `
-            <tr>
-                <td colspan="11" style="text-align: center; padding: 40px; color: #666;">
-                    📚 暂无学习计划<br>
-                    <small style="color: #999; margin-top: 10px; display: inline-block;">
-                        请添加新的学习内容开始使用艾宾浩斯复习法
-                    </small>
-                </td>
-            </tr>
-        `
+  if (completedItems.length === 0) {
+    alert('没有已完成的项目需要清理')
     return
   }
 
-  const today = new Date()
+  if (confirm(`确定要清理 ${completedItems.length} 个已完成的项目吗？`)) {
+    reviewData = reviewData.filter(
+      (item) => !item.status.every((status) => status === 2)
+    )
 
-  reviewData.forEach((item) => {
-    const row = document.createElement('tr')
+    // 保存数据
+    if (isGuestMode) {
+      saveToLocal()
+    } else {
+      saveToServer()
+    }
 
-    let html = `
-            <td style="font-weight: bold; color: #333; text-align: left;">${
-              item.content
-            }</td>
-            <td>
-                <div style="font-weight: 600;">${formatDate(
-                  item.startDate
-                )}</div>
-                <small style="color: #666;">${formatTime(
-                  item.startDate
-                )}</small>
-            </td>
-        `
-
-    item.reviewDates.forEach((date, index) => {
-      const isToday = today.toDateString() === date.toDateString()
-      const isPast = today > date
-      const isOverdue = isPast && item.status[index] === 0
-
-      let cellClass = ''
-      if (isToday) cellClass = 'today-highlight'
-      else if (isOverdue) cellClass = 'overdue'
-
-      html += `
-                <td class="${cellClass}">
-                    <div style="font-weight: 600; margin-bottom: 4px;">${formatDate(
-                      date
-                    )}</div>
-                    <div style="font-size: 12px; color: #666; margin-bottom: 8px;">${formatTime(
-                      date
-                    )}</div>
-                    <button class="status-btn ${getStatusClass(
-                      item.status[index]
-                    )}" 
-                            onclick="toggleStatus(${item.id}, ${index})"
-                            title="点击切换状态">
-                        ${getStatusText(item.status[index])}
-                    </button>
-                    ${
-                      isToday
-                        ? '<div style="font-size: 11px; color: #ffc107; margin-top: 4px;">📅 今日</div>'
-                        : ''
-                    }
-                    ${
-                      isOverdue
-                        ? '<div style="font-size: 11px; color: #dc3545; margin-top: 4px;">⚠️ 逾期</div>'
-                        : ''
-                    }
-                </td>
-            `
-    })
-
-    html += `
-            <td>
-                <button class="delete-btn" onclick="deleteItem(${item.id})" title="删除这个学习计划">
-                    🗑️ 删除
-                </button>
-            </td>
-        `
-
-    row.innerHTML = html
-    tbody.appendChild(row)
-  })
+    renderTable()
+    console.log(`清理了 ${completedItems.length} 个已完成项目`)
+  }
 }
 
-// 统一的数据保存方法
-async function saveData() {
-  await saveToServer()
-}
+// 渲染表格（使用原有的详细样式）
+function renderTable() {
+  const tbody = document.getElementById('reviewTableBody')
+  const emptyState = document.getElementById('emptyState')
+  const filter = document.getElementById('statusFilter').value
 
-function setCurrentDateTime() {
+  // 筛选数据
+  let filteredData = reviewData
   const now = new Date()
 
-  // 设置当前日期
-  const dateStr = now.toISOString().split('T')[0]
-  document.getElementById('startDateInput').value = dateStr
+  switch (filter) {
+    case 'pending':
+      filteredData = reviewData.filter((item) =>
+        item.status.some((status, index) => {
+          const reviewDate = new Date(item.reviewDates[index])
+          return status === 0 && reviewDate <= now
+        })
+      )
+      break
+    case 'overdue':
+      filteredData = reviewData.filter((item) =>
+        item.status.some((status, index) => {
+          const reviewDate = new Date(item.reviewDates[index])
+          return status === 0 && reviewDate < now
+        })
+      )
+      break
+    case 'completed':
+      filteredData = reviewData.filter((item) =>
+        item.status.every((status) => status === 2)
+      )
+      break
+    case 'today':
+      filteredData = reviewData.filter((item) =>
+        item.status.some((status, index) => {
+          const reviewDate = new Date(item.reviewDates[index])
+          const today = new Date()
+          return (
+            status === 0 && reviewDate.toDateString() === today.toDateString()
+          )
+        })
+      )
+      break
+  }
 
-  // 设置当前时间（格式化为HH:MM）
-  const hours = String(now.getHours()).padStart(2, '0')
-  const minutes = String(now.getMinutes()).padStart(2, '0')
-  const timeStr = `${hours}:${minutes}`
-  document.getElementById('startTimeInput').value = timeStr
+  // 显示空状态或表格
+  if (filteredData.length === 0) {
+    tbody.innerHTML = ''
+    emptyState.style.display = 'block'
+  } else {
+    emptyState.style.display = 'none'
+
+    tbody.innerHTML = filteredData
+      .map((item) => {
+        // 创建复习时间点详细信息
+        const reviewDetails = item.reviewDates
+          .map((dateStr, index) => {
+            const reviewDate = new Date(dateStr)
+            const status = item.status[index]
+            const isOverdue = status === 0 && reviewDate < now
+            const isToday =
+              status === 0 && reviewDate.toDateString() === now.toDateString()
+
+            let statusClass = ''
+            let statusIcon = ''
+            let statusText = ''
+
+            if (status === 2) {
+              statusClass = 'completed'
+              statusIcon = '✅'
+              statusText = '已完成'
+            } else if (status === 1) {
+              statusClass = 'skipped'
+              statusIcon = '⏭️'
+              statusText = '已跳过'
+            } else if (isOverdue) {
+              statusClass = 'overdue'
+              statusIcon = '🔴'
+              statusText = '逾期'
+            } else if (isToday) {
+              statusClass = 'today'
+              statusIcon = '🟡'
+              statusText = '今日到期'
+            } else {
+              statusClass = 'pending'
+              statusIcon = '⚪'
+              statusText = '待复习'
+            }
+
+            return `
+                    <div class="review-item ${statusClass}">
+                        <div class="review-header">
+                            <span class="review-number">第${index + 1}次</span>
+                            <span class="review-interval">${
+                              intervalNames[index]
+                            }</span>
+                            <span class="review-status">${statusIcon} ${statusText}</span>
+                        </div>
+                        <div class="review-time">
+                            📅 ${formatDate(reviewDate)}
+                            <span class="relative-time">(${formatRelativeTime(
+                              reviewDate
+                            )})</span>
+                        </div>
+                        ${
+                          status === 0
+                            ? `
+                            <div class="review-actions">
+                                <button class="action-btn btn-complete" 
+                                        onclick="markReview(${item.id}, ${index}, 2)">
+                                    ✅ 完成复习
+                                </button>
+                                <button class="action-btn btn-skip" 
+                                        onclick="markReview(${item.id}, ${index}, 1)">
+                                    ⏭️ 跳过
+                                </button>
+                            </div>
+                        `
+                            : ''
+                        }
+                    </div>
+                `
+          })
+          .join('')
+
+        // 计算总体状态
+        const completedCount = item.status.filter((s) => s === 2).length
+        const totalCount = item.status.length
+        const progressPercent = ((completedCount / totalCount) * 100).toFixed(0)
+
+        let overallStatus = ''
+        if (completedCount === totalCount) {
+          overallStatus =
+            '<span class="overall-status completed">🎉 全部完成</span>'
+        } else {
+          const nextReviewIndex = item.status.findIndex((s) => s === 0)
+          if (nextReviewIndex !== -1) {
+            const nextDate = new Date(item.reviewDates[nextReviewIndex])
+            if (nextDate < now) {
+              overallStatus =
+                '<span class="overall-status overdue">⚠️ 有逾期复习</span>'
+            } else if (nextDate.toDateString() === now.toDateString()) {
+              overallStatus =
+                '<span class="overall-status today">📅 今日需复习</span>'
+            } else {
+              overallStatus =
+                '<span class="overall-status pending">📚 进行中</span>'
+            }
+          }
+        }
+
+        return `
+                <tr>
+                    <td colspan="6" class="content-row">
+                        <div class="content-card">
+                            <div class="content-header">
+                                <div class="content-info">
+                                    <h3 class="content-title">${
+                                      item.content
+                                    }</h3>
+                                    <div class="content-meta">
+                                        <span class="add-time">📅 添加时间: ${formatDate(
+                                          new Date(item.addTime)
+                                        )}</span>
+                                        <span class="progress">📊 进度: ${completedCount}/${totalCount} (${progressPercent}%)</span>
+                                        ${overallStatus}
+                                    </div>
+                                </div>
+                                <div class="content-actions">
+                                    <button class="action-btn btn-delete" 
+                                            onclick="deleteItem(${item.id})"
+                                            title="删除项目">
+                                        🗑️ 删除
+                                    </button>
+                                </div>
+                            </div>
+                            <div class="review-timeline">
+                                ${reviewDetails}
+                            </div>
+                        </div>
+                    </td>
+                </tr>
+            `
+      })
+      .join('')
+  }
+
+  // 更新统计
+  updateStats()
 }
 
-// 定期重连服务器
-function startPeriodicSync() {
-  // 每30秒尝试重连一次（如果离线）
-  setInterval(async () => {
-    if (!isOnline) {
-      try {
-        const response = await apiRequest('/health')
-        if (response.status === 'ok') {
-          await loadFromServer()
+// 更新统计信息
+function updateStats() {
+  const now = new Date()
+  let totalItems = reviewData.length
+  let overdueCount = 0
+  let todayCount = 0
+  let completedCount = 0
+
+  reviewData.forEach((item) => {
+    // 检查是否全部完成
+    if (item.status.every((status) => status === 2)) {
+      completedCount++
+      return
+    }
+
+    // 检查逾期和今日到期
+    item.status.forEach((status, index) => {
+      if (status === 0) {
+        const reviewDate = new Date(item.reviewDates[index])
+        if (reviewDate < now) {
+          overdueCount++
+        } else if (reviewDate.toDateString() === now.toDateString()) {
+          todayCount++
         }
+      }
+    })
+  })
+
+  document.getElementById('totalCount').textContent = `总计: ${totalItems}`
+  document.getElementById('overdueCount').textContent = `逾期: ${overdueCount}`
+  document.getElementById('todayCount').textContent = `今日: ${todayCount}`
+  document.getElementById(
+    'completedCount'
+  ).textContent = `已完成: ${completedCount}`
+}
+
+// 设置当前时间
+function setCurrentDateTime() {
+  function updateTime() {
+    const now = new Date()
+    const timeString = now.toLocaleString('zh-CN', {
+      year: 'numeric',
+      month: '2-digit',
+      day: '2-digit',
+      hour: '2-digit',
+      minute: '2-digit',
+      second: '2-digit',
+    })
+
+    const timeElement = document.getElementById('currentTime')
+    if (timeElement) {
+      timeElement.textContent = timeString
+    }
+  }
+
+  updateTime()
+  setInterval(updateTime, 1000)
+}
+
+// ==================== 数据存储相关 ====================
+
+// 保存到本地存储
+function saveToLocal() {
+  try {
+    localStorage.setItem('reviewData', JSON.stringify(reviewData))
+    console.log('[本地存储] 数据保存成功')
+  } catch (error) {
+    console.error('[本地存储] 保存失败:', error)
+    updateSyncStatus('❌ 本地保存失败', false)
+  }
+}
+
+// 加载本地数据
+function loadLocalData() {
+  try {
+    const localData = localStorage.getItem('reviewData')
+    if (localData) {
+      reviewData = JSON.parse(localData)
+      console.log('[本地存储] 数据加载成功，项目数:', reviewData.length)
+    } else {
+      reviewData = []
+      console.log('[本地存储] 没有本地数据')
+    }
+    renderTable()
+    updateSyncStatus('🏠 游客模式 - 数据仅保存在本地', false)
+  } catch (error) {
+    console.error('[本地存储] 加载失败:', error)
+    reviewData = []
+    renderTable()
+    updateSyncStatus('❌ 本地数据加载失败', false)
+  }
+}
+
+// 保存到服务器
+async function saveToServer() {
+  if (isGuestMode) {
+    saveToLocal()
+    return
+  }
+
+  try {
+    updateSyncStatus('🔄 正在同步到云端...', true)
+
+    const response = await apiRequest('/reviews', {
+      method: 'POST',
+      body: JSON.stringify({ reviews: reviewData }),
+    })
+
+    if (response.success) {
+      isOnline = true
+      updateSyncStatus(`☁️ 云端同步成功 (${response.count}项)`, true)
+      console.log('[云端同步] 保存成功:', response)
+
+      // 更新用户统计
+      if (currentUser) {
+        loadUserStats()
+      }
+    } else {
+      throw new Error(response.error || '保存失败')
+    }
+  } catch (error) {
+    console.error('[云端同步] 保存失败:', error)
+    isOnline = false
+
+    // fallback到本地存储
+    saveToLocal()
+    updateSyncStatus('❌ 云端同步失败，已保存到本地', false)
+  }
+}
+
+// 从服务器加载数据
+async function loadFromServer() {
+  if (isGuestMode) {
+    loadLocalData()
+    return
+  }
+
+  try {
+    updateSyncStatus('🔄 正在从云端加载...', true)
+
+    const response = await apiRequest('/reviews')
+
+    if (response.success) {
+      reviewData = response.data || []
+      isOnline = true
+      renderTable()
+      updateSyncStatus(`☁️ 云端数据加载成功 (${reviewData.length}项)`, true)
+      console.log('[云端同步] 加载成功:', response)
+    } else {
+      throw new Error(response.error || '加载失败')
+    }
+  } catch (error) {
+    console.error('[云端同步] 加载失败:', error)
+    isOnline = false
+
+    // fallback到本地数据
+    loadLocalData()
+    updateSyncStatus('❌ 云端加载失败，使用本地数据', false)
+  }
+}
+
+// 定期同步
+function startPeriodicSync() {
+  if (isGuestMode) return
+
+  setInterval(async () => {
+    if (!isGuestMode && reviewData.length > 0) {
+      try {
+        await saveToServer()
       } catch (error) {
-        // 继续保持离线状态
+        console.log('[定期同步] 同步失败，将在下次尝试')
       }
     }
-  }, 30000)
-
-  // 每分钟更新表格显示
-  setInterval(() => {
-    renderTable()
-  }, 60000)
+  }, 60000) // 每分钟同步一次
 }
 
-// 页面可见性变化时重新加载数据
-document.addEventListener('visibilitychange', () => {
-  if (!document.hidden) {
-    loadFromServer()
-  }
-})
+// ==================== 应用初始化 ====================
 
-// 页面初始化
 async function initApp() {
+  // 添加事件监听器
+  document.addEventListener('click', handleModalBackdropClick)
+  document.addEventListener('keydown', handleEscapeKey)
+
+  // 检查认证状态
+  if (checkAuth()) {
+    // 已登录，切换到用户模式
+    switchToUserMode()
+
+    // 验证token有效性并加载数据
+    try {
+      const response = await apiRequest('/auth/verify')
+      if (response.success) {
+        await loadFromServer()
+      }
+    } catch (error) {
+      // token无效，切换到游客模式
+      currentUser = null
+      isGuestMode = true
+      switchToGuestMode()
+      loadLocalData()
+    }
+  } else {
+    // 未登录，游客模式
+    switchToGuestMode()
+    loadLocalData()
+  }
+
   // 设置当前日期和时间
   setCurrentDateTime()
 
-  // 尝试从服务器加载数据
-  await loadFromServer()
-
-  // 开始定期同步
-  startPeriodicSync()
+  // 开始定期同步（仅在已登录时）
+  if (!isGuestMode) {
+    startPeriodicSync()
+  }
 
   console.log('🎉 艾宾浩斯复习系统初始化完成')
 }
 
 // 启动应用
-initApp()
+document.addEventListener('DOMContentLoaded', function () {
+  initApp()
+})

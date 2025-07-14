@@ -3,134 +3,243 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>艾宾浩斯记忆曲线复习表</title>
-    <link  href="./index.css" type="text/css" rel="stylesheet">
-
+    <title>艾宾浩斯记忆曲线复习系统</title>
+    <link rel="stylesheet" href="./index.css">
 </head>
 <body>
-    <div class="container">
-        <div class="header">
-            <h1>艾宾浩斯记忆曲线复习表</h1>
-            <p>科学安排复习时间，提高记忆效率</p>
-        </div>
-        
-        <div class="content">
-            <div class="instructions" id="instructions">
-                <button class="toggle-btn" onclick="toggleInstructions()">收起说明</button>
+    <!-- 登录注册弹窗 -->
+    <div id="authModal" class="auth-modal">
+        <div class="auth-modal-content">
+            <!-- 关闭按钮 -->
+            <button class="auth-close-btn" onclick="hideAuthModal()" title="关闭">
+                <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                    <line x1="18" y1="6" x2="6" y2="18"></line>
+                    <line x1="6" y1="6" x2="18" y2="18"></line>
+                </svg>
+            </button>
+
+            <div class="auth-header">
+                <h1>🧠 艾宾浩斯复习系统</h1>
+                <p>科学记忆，高效学习</p>
+            </div>
+
+            <div class="auth-tabs">
+                <button class="auth-tab active" onclick="switchAuthTab('login')">登录</button>
+                <button class="auth-tab" onclick="switchAuthTab('register')">注册</button>
+            </div>
+
+            <div class="auth-form">
+                <div id="authErrorMessage" class="error-message" style="display: none;"></div>
+                <div id="authSuccessMessage" class="success-message" style="display: none;"></div>
                 
-                <h2>📋 使用说明</h2>
-                
-                <h3>一、什么是艾宾浩斯记忆曲线</h3>
-                <p>艾宾浩斯记忆曲线告诉我们，刚学完的内容会快速遗忘，但通过科学的复习时间安排，可以大大提高记忆效果。最佳复习时间点是：<strong>学习后20分钟、1小时、1天、2天、4天、7天、15天、30天</strong>。</p>
-                
-                <h3>二、如何添加学习内容</h3>
-                <ol>
-                    <li>在"输入学习内容"框中填写你要学习的内容（如：英语单词第1组、历史第三章等）</li>
-                    <li>选择开始学习的日期和时间（默认为当前时间）</li>
-                    <li>点击"添加到复习计划"按钮</li>
-                    <li>系统会自动计算出8个复习时间点</li>
-                </ol>
-                <p><strong>建议：</strong>每组内容不要太多，单词建议20-30个一组，可以同时管理多个学习内容。</p>
-                
-                <h3>三、复习状态说明</h3>
-                <div class="status-demo">
-                    <div class="status-demo-item">
-                        <div class="status-demo-color" style="background: #f44336;"></div>
-                        <span><strong>红色 - 未开始：</strong>还没有进行这个时间点的复习</span>
-                    </div>
-                    <div class="status-demo-item">
-                        <div class="status-demo-color" style="background: #ff9800;"></div>
-                        <span><strong>橙色 - 进行中：</strong>已经开始复习，但还没有完全掌握</span>
-                    </div>
-                    <div class="status-demo-item">
-                        <div class="status-demo-color" style="background: #4CAF50;"></div>
-                        <span><strong>绿色 - 已完成：</strong>这个时间点的复习已经完成，内容已经牢固掌握</span>
+                <div id="authLoading" class="auth-loading">
+                    <div class="spinner"></div>
+                    <p>处理中...</p>
+                </div>
+
+                <!-- 登录表单 -->
+                <div id="loginFormModal" class="auth-form-container active">
+                    <form onsubmit="handleModalLogin(event)">
+                        <div class="form-group">
+                            <label for="modalLoginUsername">用户名或邮箱</label>
+                            <input type="text" id="modalLoginUsername" required autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalLoginPassword">密码</label>
+                            <input type="password" id="modalLoginPassword" required autocomplete="current-password">
+                        </div>
+                        <button type="submit" class="auth-btn" id="modalLoginBtn">登录</button>
+                    </form>
+                    
+                    <!-- 游客提示 -->
+                    <div class="guest-hint">
+                        <p>💡 您也可以先体验功能，需要保存数据时再注册</p>
                     </div>
                 </div>
+
+                <!-- 注册表单 -->
+                <div id="registerFormModal" class="auth-form-container">
+                    <form onsubmit="handleModalRegister(event)">
+                        <div class="form-group">
+                            <label for="modalRegisterUsername">用户名</label>
+                            <input type="text" id="modalRegisterUsername" required autocomplete="username">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalRegisterEmail">邮箱</label>
+                            <input type="email" id="modalRegisterEmail" required autocomplete="email">
+                        </div>
+                        <div class="form-group">
+                            <label for="modalRegisterPassword">密码</label>
+                            <input type="password" id="modalRegisterPassword" required autocomplete="new-password">
+                            <div class="password-hint">密码长度至少6位</div>
+                        </div>
+                        <button type="submit" class="auth-btn" id="modalRegisterBtn">注册</button>
+                    </form>
+                </div>
+            </div>
+        </div>
+    </div>
+
+    <!-- 用户信息栏（登录后显示） -->
+    <div id="userBar" class="user-bar" style="display: none;">
+        <div class="user-info">
+            <span id="userWelcome">👋 欢迎</span>
+            <span id="userStats"></span>
+        </div>
+        <button onclick="logout()" class="logout-btn">退出登录</button>
+    </div>
+
+    <!-- 游客模式提示栏 -->
+    <div id="guestBar" class="guest-bar">
+        <div class="guest-info">
+            <span>👋 您好，游客用户</span>
+            <span class="guest-notice">数据仅保存在本地，刷新页面会丢失</span>
+        </div>
+        <button onclick="showAuthModal()" class="login-trigger-btn">登录/注册</button>
+    </div>
+
+    <div class="container">
+        <header class="header">
+            <h1>🧠 艾宾浩斯记忆曲线复习系统</h1>
+            <p class="subtitle">基于科学记忆规律的智能复习时间管理工具</p>
+            
+            <!-- 同步状态 -->
+            <div id="syncStatus" class="sync-status">🔄 正在加载...</div>
+            
+            <!-- 使用说明按钮 -->
+            <button class="instructions-toggle" onclick="toggleInstructions()">
+                💡 使用说明
+            </button>
+        </header>
+
+        <!-- 使用说明面板 -->
+        <div id="instructionsPanel" class="instructions-panel">
+            <h3>📖 艾宾浩斯记忆曲线原理</h3>
+            <div class="instructions-content">
+                <p><strong>🧬 科学依据：</strong> 德国心理学家艾宾浩斯发现，遗忘在学习之后立即开始，遗忘率先快后慢。</p>
                 
-                <h3>四、日常使用流程</h3>
-                <ol>
-                    <li>打开复习表，查看当天需要复习的内容（黄色高亮显示）</li>
-                    <li>按时间进行复习</li>
-                    <li>复习后点击状态按钮更新进度：
-                        <ul>
-                            <li>如果完全记住了 → 点击改为"已完成"（绿色）</li>
-                            <li>如果还有些模糊 → 点击改为"进行中"（橙色）</li>
-                            <li>如果完全忘记了 → 重新学习后改为"进行中"</li>
-                        </ul>
-                    </li>
-                </ol>
-                <p><strong>状态更新原则：</strong>一看就知道答案 = 已完成；需要想一下才想起来 = 进行中；完全不记得 = 重新学习后标记进行中</p>
-                
-                <h3>五、重要提醒</h3>
+                <h4>⏰ 复习时间间隔：</h4>
                 <ul>
-                    <li><strong>时间管理：</strong>严格按照表格显示的时间进行复习，过期的复习会标红提醒</li>
-                    <li><strong>灵活调整：</strong>状态可以随时修改，如果发现"已完成"的内容又忘记了，可以改回"进行中"</li>
-                    <li><strong>数据保存：</strong>所有数据自动保存，关闭浏览器后重新打开数据仍在</li>
+                    <li><span class="interval-badge">20分钟后</span> - 第一次复习</li>
+                    <li><span class="interval-badge">1小时后</span> - 第二次复习</li>
+                    <li><span class="interval-badge">1天后</span> - 第三次复习</li>
+                    <li><span class="interval-badge">2天后</span> - 第四次复习</li>
+                    <li><span class="interval-badge">4天后</span> - 第五次复习</li>
+                    <li><span class="interval-badge">7天后</span> - 第六次复习</li>
+                    <li><span class="interval-badge">15天后</span> - 第七次复习</li>
+                    <li><span class="interval-badge">30天后</span> - 第八次复习</li>
                 </ul>
                 
-                <h3>六、成功秘诀</h3>
+                <h4>🎯 使用方法：</h4>
                 <ol>
-                    <li><strong>坚持按时复习</strong> - 不要跳过任何一个复习时间点</li>
-                    <li><strong>诚实标记状态</strong> - 如实反映掌握程度</li>
-                    <li><strong>重视"进行中"状态</strong> - 这些内容需要额外关注</li>
-                    <li><strong>分组学习</strong> - 不要一次性添加太多内容</li>
-                    <li><strong>持续30天</strong> - 完成全部8轮复习才能真正掌握</li>
+                    <li><strong>添加学习内容：</strong> 输入您要记忆的知识点、单词、概念等</li>
+                    <li><strong>系统自动安排：</strong> 根据艾宾浩斯曲线自动生成8个复习时间点</li>
+                    <li><strong>按时复习：</strong> 在指定时间进行复习，点击对应的复习状态</li>
+                    <li><strong>跟踪进度：</strong> 系统会显示您的复习进度和记忆效果</li>
                 </ol>
-            </div>
-            
-            <div class="input-section">
-                <h3 style="margin-bottom: 20px; color: #333;">添加新的学习内容</h3>
-                <div class="input-group">
-                    <input type="text" id="contentInput" placeholder="输入学习内容（如：单词组1、历史第三章等）">
-                    <div class="datetime-group">
-                        <input type="date" id="startDateInput">
-                        <input type="time" id="startTimeInput">
-                    </div>
-                    <button class="btn" onclick="addContent()">添加到复习计划</button>
+                
+                <div class="tips">
+                    <h4>💡 使用技巧：</h4>
+                    <ul>
+                        <li>保持规律性：尽量按照推荐时间进行复习</li>
+                        <li>专注质量：每次复习要认真思考，确保理解</li>
+                        <li>及时标记：根据复习效果及时更新状态</li>
+                        <li>持续跟踪：定期查看整体进度，调整学习策略</li>
+                    </ul>
                 </div>
-            </div>
-            <div id="syncStatus" class="sync-status">
-    正在初始化...
-</div>
-            
-            <div class="legend">
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #f44336;"></div>
-                    <span>未开始</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #ff9800;"></div>
-                    <span>进行中</span>
-                </div>
-                <div class="legend-item">
-                    <div class="legend-color" style="background: #4CAF50;"></div>
-                    <span>已完成</span>
-                </div>
-            </div>
-            
-            <div class="table-container">
-                <table id="reviewTable">
-                    <thead>
-                        <tr>
-                            <th>学习内容</th>
-                            <th>初学日期</th>
-                            <th>20分钟后</th>
-                            <th>1小时后</th>
-                            <th>1天后</th>
-                            <th>2天后</th>
-                            <th>4天后</th>
-                            <th>7天后</th>
-                            <th>15天后</th>
-                            <th>30天后</th>
-                            <th>操作</th>
-                        </tr>
-                    </thead>
-                    <tbody id="tableBody">
-                    </tbody>
-                </table>
             </div>
         </div>
+
+        <main class="main-content">
+            <!-- 添加学习内容区域 -->
+            <section class="add-section">
+                <h2>📝 添加学习内容</h2>
+                <form class="add-form" onsubmit="addContent(event)">
+                    <div class="input-group">
+                        <input 
+                            type="text" 
+                            id="content" 
+                            placeholder="输入要记忆的内容（如：单词、概念、公式等）" 
+                            required
+                            maxlength="200"
+                        >
+                        <button type="submit" class="add-btn">
+                            ➕ 添加到复习计划
+                        </button>
+                    </div>
+                    <div class="input-hint">
+                        系统将根据艾宾浩斯记忆曲线自动安排8次复习时间
+                    </div>
+                </form>
+            </section>
+
+            <!-- 当前时间显示 -->
+            <section class="time-section">
+                <div class="current-time">
+                    <span class="time-label">📅 当前时间：</span>
+                    <span id="currentTime" class="time-display">加载中...</span>
+                </div>
+            </section>
+
+            <!-- 复习列表 -->
+            <section class="review-section">
+                <div class="section-header">
+                    <h2>📚 复习计划</h2>
+                    <div class="review-stats">
+                        <span id="totalCount" class="stat-item">总计: 0</span>
+                        <span id="overdueCount" class="stat-item overdue">逾期: 0</span>
+                        <span id="todayCount" class="stat-item today">今日: 0</span>
+                        <span id="completedCount" class="stat-item completed">已完成: 0</span>
+                    </div>
+                </div>
+                
+                <!-- 筛选器 -->
+                <div class="filter-section">
+                    <label for="statusFilter">筛选状态：</label>
+                    <select id="statusFilter" onchange="renderTable()">
+                        <option value="all">全部</option>
+                        <option value="pending">待复习</option>
+                        <option value="overdue">逾期</option>
+                        <option value="completed">已完成</option>
+                        <option value="today">今日到期</option>
+                    </select>
+                    
+                    <button class="clear-btn" onclick="clearCompleted()">
+                        🗑️ 清理已完成
+                    </button>
+                </div>
+
+                <!-- 复习表格 -->
+              <!-- 复习表格 -->
+<div class="table-container">
+    <table id="reviewTable" class="review-table">
+        <thead>
+            <tr>
+                <th colspan="6">学习内容详情</th>
+            </tr>
+        </thead>
+        <tbody id="reviewTableBody">
+            <!-- 动态生成内容 -->
+        </tbody>
+    </table>
+    
+    <div id="emptyState" class="empty-state">
+        <div class="empty-icon">📚</div>
+        <h3>还没有学习内容</h3>
+        <p>添加您的第一个学习项目，开始科学记忆之旅！</p>
+    </div>
+</div>
+            </section>
+        </main>
+
+        <footer class="footer">
+            <div class="footer-content">
+                <p>© 2025 艾宾浩斯记忆曲线复习系统 | 基于科学记忆规律的学习工具</p>
+                <div class="footer-links">
+                    <span>💡 坚持科学复习，让记忆更持久</span>
+                </div>
+            </div>
+        </footer>
     </div>
 
     <script src="./main.js"></script>
